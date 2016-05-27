@@ -58,60 +58,57 @@ if [ -z "${PDU_HOST}" ] ; then usage ; fi
 echo "PDU: $PDU_HOST"
 echo "SNMP: $SNMP_STRING"
 
-# Check Temperature SNMP call
-# $USER1$/check_snmp -H $HOSTADDRESS$ -C $SNMP_STRING -o ".1.3.6.1.4.1.1718.3.2.5.1.6.1.1" -w 100:400 -c 50:450
-
-# Check Humidity SNMP call
-# $USER1$/check_snmp -H $HOSTADDRESS$ -C $SNMP_STRING -o ".1.3.6.1.4.1.1718.3.2.5.1.10.1.1" -w 10:90 -c 5:95
-
-# Check Watts SNMP call
-# $USER1$/check_snmp -H $HOSTADDRESS$ -C $SNMP_STRING -o ".1.3.6.1.4.1.1718.3.1.6.0" -w 4250 -c 4750
-
 # Make sure the check_snmp plugin is available
 if ! [ -f $CHECK_SNMP_PLUGIN ] ; then
   echo "CRIT: check_snmp not found at $CHECK_SNMP_PLUGIN"
   exit 2
 fi
 
-RAW_TOWER_CNT=$($CHECK_SNMP_PLUGIN -H $PDU_HOST -C $SNMP_STRING -o ".1.3.6.1.4.1.1718.3.1.4.0")
-TOWER_CNT=$(echo $RAW_TOWER_CNT | cut -f 4 -d ' ')
+# Get the number of towers
+readonly RAW_TOWER_CNT=$($CHECK_SNMP_PLUGIN -H $PDU_HOST -C $SNMP_STRING -o ".1.3.6.1.4.1.1718.3.1.4.0")
+readonly TOWER_CNT=$(echo $RAW_TOWER_CNT | cut -f 4 -d ' ')
 echo "Tower Count: $TOWER_CNT"
 
-# This is the number of towers w/ sensor ports. Each towwe has two ports
-RAW_SENSOR_CNT=$($CHECK_SNMP_PLUGIN -H $PDU_HOST -C $SNMP_STRING -o ".1.3.6.1.4.1.1718.3.1.5.0")
-SENSOR_CNT=$(echo $RAW_SENSOR_CNT | cut -f 4 -d ' ')
+# This is the number of towers w/ sensor ports. Each tower has two ports.
+readonly RAW_SENSOR_CNT=$($CHECK_SNMP_PLUGIN -H $PDU_HOST -C $SNMP_STRING -o ".1.3.6.1.4.1.1718.3.1.5.0")
+readonly SENSOR_CNT=$(echo $RAW_SENSOR_CNT | cut -f 4 -d ' ')
 echo "Towers w/ Sensors Count: $SENSOR_CNT"
 
-RAW_TOTAL_WATTS=$($CHECK_SNMP_PLUGIN -H $PDU_HOST -C $SNMP_STRING -o ".1.3.6.1.4.1.1718.3.1.6.0")
-TOTAL_WATTS=$(echo $RAW_TOTAL_WATTS | cut -f 4 -d ' ')
+# This is the total watts used (combined if two towers)
+readonly RAW_TOTAL_WATTS=$($CHECK_SNMP_PLUGIN -H $PDU_HOST -C $SNMP_STRING -o ".1.3.6.1.4.1.1718.3.1.6.0")
+readonly TOTAL_WATTS=$(echo $RAW_TOTAL_WATTS | cut -f 4 -d ' ')
 echo "Total power consumed: $TOTAL_WATTS"
 
+# This is the AMPs used, it is multiplied by 100 (5A is 500)
 # We will always check Tower 1
-RAW_TOWER_ONE_FEED=$($CHECK_SNMP_PLUGIN -H $PDU_HOST -C $SNMP_STRING -o ".1.3.6.1.4.1.1718.3.2.2.1.7.1.1")
-TOWER_ONE_FEED=$(echo $RAW_TOWER_ONE_FEED | cut -f 4 -d ' ')
+readonly RAW_TOWER_ONE_FEED=$($CHECK_SNMP_PLUGIN -H $PDU_HOST -C $SNMP_STRING -o ".1.3.6.1.4.1.1718.3.2.2.1.7.1.1")
+readonly TOWER_ONE_FEED=$(echo $RAW_TOWER_ONE_FEED | cut -f 4 -d ' ')
 echo "Tower 1 Feed: $TOWER_ONE_FEED"
 # Only check Tower 2 if the tower count is 2
 if [ "2" == $TOWER_CNT ] ; then
-  RAW_TOWER_TWO_FEED=$($CHECK_SNMP_PLUGIN -H $PDU_HOST -C $SNMP_STRING -o ".1.3.6.1.4.1.1718.3.2.2.1.7.2.1")
-  TOWER_TWO_FEED=$(echo $RAW_TOWER_TWO_FEED | cut -f 4 -d ' ')
+  readonly RAW_TOWER_TWO_FEED=$($CHECK_SNMP_PLUGIN -H $PDU_HOST -C $SNMP_STRING -o ".1.3.6.1.4.1.1718.3.2.2.1.7.2.1")
+  readonly TOWER_TWO_FEED=$(echo $RAW_TOWER_TWO_FEED | cut -f 4 -d ' ')
   echo "Tower 2 Feed: $TOWER_TWO_FEED"
 fi
 
 
 if [ $CHECK_TEMPERATURE == "true" ] ; then
-  readonly RAW_TEMP_A1=$($CHECK_SNMP_PLUGIN -H $PDU_HOST -C $SNMP_STRING -o ".1.3.6.1.4.1.1718.3.2.5.1.6.1.1")
-  readonly TEMP_A1=$(echo $RAW_TEMP_A1 | cut -f 4 -d ' ')
-  readonly RAW_TEMP_A2=$($CHECK_SNMP_PLUGIN -H $PDU_HOST -C $SNMP_STRING -o ".1.3.6.1.4.1.1718.3.2.5.1.6.1.2")
-  readonly TEMP_A2=$(echo $RAW_TEMP_A2 | cut -f 4 -d ' ')
-  echo "Temp Sensor A1: $TEMP_A1"
-  echo "Temp Sensor A2: $TEMP_A2"
-  if [ "2" == $SENSOR_CNT ] ; then
-    readonly RAW_TEMP_B1=$($CHECK_SNMP_PLUGIN -H $PDU_HOST -C $SNMP_STRING -o ".1.3.6.1.4.1.1718.3.2.5.1.6.2.1")
-    readonly TEMP_B1=$(echo $RAW_TEMP_B1 | cut -f 4 -d ' ')
-    readonly RAW_TEMP_B2=$($CHECK_SNMP_PLUGIN -H $PDU_HOST -C $SNMP_STRING -o ".1.3.6.1.4.1.1718.3.2.5.1.6.2.2")
-    readonly TEMP_B2=$(echo $RAW_TEMP_B2 | cut -f 4 -d ' ')
-    echo "Temp Sensor B1: $TEMP_B1"
-    echo "Temp Sensor B2: $TEMP_B2"
+  # if at least one tower has sensors, do detection
+  if [ $SENSOR_CNT > 0 ] ; then
+    readonly RAW_TEMP_A1=$($CHECK_SNMP_PLUGIN -H $PDU_HOST -C $SNMP_STRING -o ".1.3.6.1.4.1.1718.3.2.5.1.6.1.1")
+    readonly TEMP_A1=$(echo $RAW_TEMP_A1 | cut -f 4 -d ' ')
+    readonly RAW_TEMP_A2=$($CHECK_SNMP_PLUGIN -H $PDU_HOST -C $SNMP_STRING -o ".1.3.6.1.4.1.1718.3.2.5.1.6.1.2")
+    readonly TEMP_A2=$(echo $RAW_TEMP_A2 | cut -f 4 -d ' ')
+    echo "Temp Sensor A1: $TEMP_A1"
+    echo "Temp Sensor A2: $TEMP_A2"
+    if [ "2" == $SENSOR_CNT ] ; then
+      readonly RAW_TEMP_B1=$($CHECK_SNMP_PLUGIN -H $PDU_HOST -C $SNMP_STRING -o ".1.3.6.1.4.1.1718.3.2.5.1.6.2.1")
+      readonly TEMP_B1=$(echo $RAW_TEMP_B1 | cut -f 4 -d ' ')
+      readonly RAW_TEMP_B2=$($CHECK_SNMP_PLUGIN -H $PDU_HOST -C $SNMP_STRING -o ".1.3.6.1.4.1.1718.3.2.5.1.6.2.2")
+      readonly TEMP_B2=$(echo $RAW_TEMP_B2 | cut -f 4 -d ' ')
+      echo "Temp Sensor B1: $TEMP_B1"
+      echo "Temp Sensor B2: $TEMP_B2"
+    fi
   fi
 fi
 
