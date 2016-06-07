@@ -22,7 +22,7 @@ readonly WATTS_WARN=4250
 readonly WATTS_CRIT=4750
 
 # Load is in AMPs
-readonly LOAD_ALARM=6
+readonly LOAD_ALARM=24
 
 # Temperature is in Celcius 
 TEMPERATURE_WARN_MAX=40
@@ -104,16 +104,37 @@ get_power_consumed() {
 
 check_power_thresholds() {
   # For now, we are going to use the ServerTech defaults
-
+  local POWER_STATUS=0
   # Check Watts (TODO)
 
   # Check AMPs
-  local LOAD_ALARM_CONVERT=$(($LOAD_ALARM * 100))
+  local LOAD_ALARM_CONVERT=$(echo "scale=0;($LOAD_ALARM * 100)/1" | bc)
   if [ $TOWER_ONE_FEED -gt $LOAD_ALARM_CONVERT ] ; then
-    echo "Tower One Too High!"
+    POWER_STATUS=2
+    local T1_CONVERT=$(echo "scale=2;$TOWER_ONE_FEED/100" | bc)
+    TOWER_ONE_MESSAGE="Tower One at $T1_CONVERT Amps"
   fi
   if [ $TOWER_TWO_FEED -gt $LOAD_ALARM_CONVERT ] ; then
-    echo "Tower Two Too High!"
+    POWER_STATUS=2
+    local T2_CONVERT=$(echo "scale=2;$TOWER_TWO_FEED/100" | bc)
+    TOWER_TWO_MESSAGE="Tower Two at $T2_CONVERT Amps"
+  fi
+
+  if [ "0" -eq "$POWER_STATUS" ] ; then
+    OVERALL_STATUS=$POWER_STATUS
+    echo "Power OK"
+    return
+  fi 
+  if [ "2" -eq "$POWER_STATUS" ] ; then
+    OVERALL_STATUS=$POWER_STATUS
+    local POWER_MESSAGE="Power CRIT:"
+    if [ "" != "$TOWER_ONE_MESSAGE" ] ; then
+      POWER_MESSAGE="$POWER_MESSAGE $TOWER_ONE_MESSAGE"
+    fi
+    if [ "" != "$TOWER_TWO_MESSAGE" ] ; then
+      POWER_MESSAGE="$POWER_MESSAGE $TOWER_TWO_MESSAGE"
+    fi
+    echo "$POWER_MESSAGE"
   fi
 }
 
@@ -209,9 +230,15 @@ generate_performance_string() {
     fi
   fi
 
-  echo "$WATT_PERF $TOWER_ONE_FEED_PERF $TOWER_TWO_FEED_PERF"
-  echo "$TEMP_PERF"
-  echo "$HUMIDITY_PERF"
+  PERF_DATA="$WATT_PERF $TOWER_ONE_FEED_PERF $TOWER_TWO_FEED_PERF"
+  if [ $CHECK_TEMPERATURE == "true" ] ; then
+    PERF_DATA="$PERF_DATA $TEMP_PERF"
+  fi
+  if [ $CHECK_HUMIDITY == "true" ] ; then
+    PERF_DATA="$PERF_DATA $HUMIDITY_PERF"
+  fi
+
+  echo $PERF_DATA
 }
 
 get_tower_details
