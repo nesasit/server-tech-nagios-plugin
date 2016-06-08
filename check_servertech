@@ -2,6 +2,12 @@
 
 
 SNMP_STRING="public"
+
+readonly OK=0
+readonly WARNING=1
+readonly CRITICAL=2
+readonly UNKNOWN=3
+
 readonly CHECK_SNMP_PLUGIN=/usr/lib/nagios/plugins/check_snmp
 readonly TOTAL_WATTS_MIB=".1.3.6.1.4.1.1718.3.1.6.0"
 readonly TOWER_ONE_AMPS_MIB=".1.3.6.1.4.1.1718.3.2.2.1.7.1.1"
@@ -24,11 +30,11 @@ readonly WATTS_CRIT=4750
 # Load is in AMPs
 readonly LOAD_ALARM=24
 
-# Temperature is in Celcius 
-TEMPERATURE_WARN_MAX=40
-TEMPERATURE_WARN_MIN=10
-TEMPERATURE_CRIT_MAX=45
-TEMPERATURE_CRIT_MIN=50
+# Temperature is in Celcius
+readonly TEMPERATURE_WARN_MAX=40  # Default: 40
+readonly TEMPERATURE_WARN_MIN=10  # Default: 10
+readonly TEMPERATURE_CRIT_MAX=45  # Default: 45
+readonly TEMPERATURE_CRIT_MIN=5   # Default: 5
 
 # Humidity is in percentage
 HUMIDITY_WARN_MAX=90
@@ -69,12 +75,12 @@ if [ -z "${PDU_HOST}" ] ; then usage ; fi
 # Make sure the check_snmp plugin is available
 if ! [ -f $CHECK_SNMP_PLUGIN ] ; then
   echo "CRIT: check_snmp not found at $CHECK_SNMP_PLUGIN"
-  exit 2
+  exit $CRITICAL
 fi
 # Make sure BC is installed, needed for comparison data
 if ! [ $(which bc) ] ; then
   echo "CRIT: bc is required to do calculations, not in path"
-  exit 2
+  exit $CRITICAL
 fi
 
 # Get the number of towers and sensor port count
@@ -139,13 +145,179 @@ check_power_thresholds() {
 }
 
 check_temperature_thresholds() {
-  # do some checks here
-  touch /dev/null
+  local TEMP_STATUS=$OK
+  local TEMP_A1_STATUS=$OK
+  local TEMP_A2_STATUS=$OK
+  local TEMP_B1_STATUS=$OK
+  local TEMP_B2_STATUS=$OK
+  local TEMP_CRIT_MAX_SCALE=$(echo "$TEMPERATURE_CRIT_MAX*10" | bc)
+  local TEMP_CRIT_MIN_SCALE=$(echo "$TEMPERATURE_CRIT_MIN*10" | bc)
+  local TEMP_WARN_MAX_SCALE=$(echo "$TEMPERATURE_WARN_MAX*10" | bc)
+  local TEMP_WARN_MIN_SCALE=$(echo "$TEMPERATURE_WARN_MIN*10" | bc)
+
+  if [ $CHECK_TEMPERATURE == "true" ] ; then
+    # Time to check temps
+    # Check Sensor A1
+    if [ "-1" != "$TEMP_A1" ] ; then
+      if [ $TEMP_A1 -gt $TEMP_CRIT_MAX_SCALE ] ||
+         [ $TEMP_A1 -lt $TEMP_CRIT_MIN_SCALE ]; then
+        TEMP_A1_STATUS=$CRITICAL
+        TEMP_MESSAGE="A1: $TEMP_A1"
+      elif [ $TEMP_A1 -gt $TEMP_WARN_MAX_SCALE ] || 
+           [ $TEMP_A1 -lt $TEMP_WARN_MIN_SCALE ]; then
+        TEMP_A1_STATUS=$WARNING
+        TEMP_MESSAGE="A1: $TEMP_A1"
+      fi
+    fi
+    # Check Sensor A2
+    if [ "-1" != "$TEMP_A2" ] ; then
+      if [ $TEMP_A2 -gt $TEMP_CRIT_MAX_SCALE ] ||
+         [ $TEMP_A2 -lt $TEMP_CRIT_MIN_SCALE ]; then
+        TEMP_A2_STATUS=$CRITICAL
+        TEMP_MESSAGE="$TEMP_MESSAGE A2: $TEMP_A2"
+      elif [ $TEMP_A2 -gt $TEMP_WARN_MAX_SCALE ] || 
+           [ $TEMP_A2 -lt $TEMP_WARN_MIN_SCALE ]; then
+        TEMP_A2_STATUS=$WARNING
+        TEMP_MESSAGE="$TEMP_MESSAGE A2: $TEMP_A2"
+      fi
+    fi
+    # Check Sensor B1
+    if [ "-1" != "$TEMP_B1" ] ; then
+      if [ $TEMP_B1 -gt $TEMP_CRIT_MAX_SCALE ] ||
+         [ $TEMP_B1 -lt $TEMP_CRIT_MIN_SCALE ]; then
+        TEMP_B1_STATUS=$CRITICAL
+        TEMP_MESSAGE="$TEMP_MESSAGE B1: $TEMP_B1"
+      elif [ $TEMP_B1 -gt $TEMP_WARN_MAX_SCALE ] || 
+           [ $TEMP_B1 -lt $TEMP_WARN_MIN_SCALE ]; then
+        TEMP_B1_STATUS=$WARNING
+        TEMP_MESSAGE="$TEMP_MESSAGE B1: $TEMP_B1"
+      fi
+    fi
+    # Check Sensor B2
+    if [ "-1" != "$TEMP_B2" ] ; then
+      if [ $TEMP_B2 -gt $TEMP_CRIT_MAX_SCALE ] ||
+         [ $TEMP_B2 -lt $TEMP_CRIT_MIN_SCALE ]; then
+        TEMP_B2_STATUS=$CRITICAL
+        TEMP_MESSAGE="$TEMP_MESSAGE B2: $TEMP_B2"
+      elif [ $TEMP_B2 -gt $TEMP_WARN_MAX_SCALE ] || 
+           [ $TEMP_B2 -lt $TEMP_WARN_MIN_SCALE ]; then
+        TEMP_B2_STATUS=$WARNING
+        TEMP_MESSAGE="$TEMP_MESSAGE B2: $TEMP_B2"
+      fi
+    fi
+
+    # is anything critical?
+    if [ $TEMP_A1_STATUS == $CRITICAL ] ||
+       [ $TEMP_A1_STATUS == $CRITICAL ] ||
+       [ $TEMP_A1_STATUS == $CRITICAL ] ||
+       [ $TEMP_A1_STATUS == $CRITICAL ] ; then
+      echo "Temp CRIT: $TEMP_MESSAGE"
+      # overall goes critical no matter what
+      OVERALL_STATUS=$CRITIAL
+      return
+    fi
+    # is anything warning?
+    if [ $TEMP_A1_STATUS == $WARNING ] ||
+       [ $TEMP_A1_STATUS == $WARNING ] ||
+       [ $TEMP_A1_STATUS == $WARNING ] ||
+       [ $TEMP_A1_STATUS == $WARNING ] ; then
+      echo "Temp WARN: $TEMP_MESSAGE"
+      # overall goes to warning, unless it is already critical
+      if [ $OVERALL_STATUS != $CRITICAL ] ; then
+         OVERALL_STATUS=$CRITICAL
+      fi
+      return
+    fi
+    # if neither, then leave the overall status alone
+    echo "Temp OK"
+    return
+  fi
 }
 
 check_humidity_thresholds() {
-  # do some checks here
-  touch /dev/null
+  local HUMIDITY_STATUS=$OK
+  local HUMIDITY_A1_STATUS=$OK
+  local HUMIDITY_A2_STATUS=$OK
+  local HUMIDITY_B1_STATUS=$OK
+  local HUMIDITY_B2_STATUS=$OK
+
+  if [ $CHECK_HUMIDITY == "true" ] ; then
+    # Time to check humidity
+    # Check Sensor A1
+    if [ "-1" != "$HUMIDITY_A1" ] ; then
+      if [ $HUMIDITY_A1 -gt $HUMIDITY_CRIT_MAX ] ||
+         [ $HUMIDITY_A1 -lt $HUMIDITY_CRIT_MIN ]; then
+        HUMIDITY_A1_STATUS=$CRITICAL
+        HUMIDITY_MESSAGE="A1: $HUMIDITY_A1"
+      elif [ $HUMIDITY_A1 -gt $HUMIDITY_WARN_MAX ] || 
+           [ $HUMIDITY_A1 -lt $HUMIDITY_WARN_MIN ]; then
+        HUMIDITY_A1_STATUS=$WARNING
+        HUMIDITY_MESSAGE="A1: $HUMIDITY_A1"
+      fi
+    fi
+    # Check Sensor A2
+    if [ "-1" != "$HUMIDITY_A2" ] ; then
+      if [ $HUMIDITY_A2 -gt $HUMIDITY_CRIT_MAX ] ||
+         [ $HUMIDITY_A2 -lt $HUMIDITY_CRIT_MIN ]; then
+        HUMIDITY_A2_STATUS=$CRITICAL
+        HUMIDITY_MESSAGE="$HUMIDITY_MESSAGE A2: $HUMIDITY_A2"
+      elif [ $HUMIDITY_A2 -gt $HUMIDITY_WARN_MAX ] || 
+           [ $HUMIDITY_A2 -lt $HUMIDITY_WARN_MIN ]; then
+        HUMIDITY_A2_STATUS=$WARNING
+        HUMIDITY_MESSAGE="$HUMIDITY_MESSAGE A2: $HUMIDITY_A2"
+      fi
+    fi
+    # Check Sensor B1
+    if [ "-1" != "$HUMIDITY_B1" ] ; then
+      if [ $HUMIDITY_B1 -gt $HUMIDITY_CRIT_MAX ] ||
+         [ $HUMIDITY_B1 -lt $HUMIDITY_CRIT_MIN ]; then
+        HUMIDITY_B1_STATUS=$CRITICAL
+        HUMIDITY_MESSAGE="$HUMIDITY_MESSAGE B1: $HUMIDITY_B1"
+      elif [ $HUMIDITY_B1 -gt $HUMIDITY_WARN_MAX ] || 
+           [ $HUMIDITY_B1 -lt $HUMIDITY_WARN_MIN ]; then
+        HUMIDITY_B1_STATUS=$WARNING
+        HUMIDITY_MESSAGE="$HUMIDITY_MESSAGE B1: $HUMIDITY_B1"
+      fi
+    fi
+    # Check Sensor B2
+    if [ "-1" != "$HUMIDITY_B2" ] ; then
+      if [ $HUMIDITY_B2 -gt $HUMIDITY_CRIT_MAX ] ||
+         [ $HUMIDITY_B2 -lt $HUMIDITY_CRIT_MIN ]; then
+        HUMIDITY_B2_STATUS=$CRITICAL
+        HUMIDITY_MESSAGE="$HUMIDITY_MESSAGE B2: $HUMIDITY_B2"
+      elif [ $HUMIDITY_B2 -gt $HUMIDITY_WARN_MAX ] || 
+           [ $HUMIDITY_B2 -lt $HUMIDITY_WARN_MIN ]; then
+        HUMIDITY_B2_STATUS=$WARNING
+        HUMIDITY_MESSAGE="$HUMIDITY_MESSAGE B2: $HUMIDITY_B2"
+      fi
+    fi
+
+    # is anything critical?
+    if [ $HUMIDITY_A1_STATUS == $CRITICAL ] ||
+       [ $HUMIDITY_A1_STATUS == $CRITICAL ] ||
+       [ $HUMIDITY_A1_STATUS == $CRITICAL ] ||
+       [ $HUMIDITY_A1_STATUS == $CRITICAL ] ; then
+      echo "Humidity CRIT: $HUMIDITY_MESSAGE"
+      # overall goes critical no matter what
+      OVERALL_STATUS=$CRITIAL
+      return
+    fi
+    # is anything warning?
+    if [ $HUMIDITY_A1_STATUS == $WARNING ] ||
+       [ $HUMIDITY_A1_STATUS == $WARNING ] ||
+       [ $HUMIDITY_A1_STATUS == $WARNING ] ||
+       [ $HUMIDITY_A1_STATUS == $WARNING ] ; then
+      echo "Humidity WARN: $TEMP_MESSAGE"
+      # overall goes to warning, unless it is already critical
+      if [ $OVERALL_STATUS != $CRITICAL ] ; then
+         OVERALL_STATUS=$CRITICAL
+      fi
+      return
+    fi
+    # if neither, then leave the overall status alone
+    echo "Humidity OK"
+    return
+  fi
 }
 
 get_temperatures() {
